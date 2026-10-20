@@ -1,0 +1,32 @@
+# Pi coding agent (npm: @earendil-works/pi-coding-agent), pinned.
+# Pinned replacement for `npm install -g --ignore-scripts` into $HOME.
+# Installed under /usr so it is part of the image (not shadowed by the /home volume).
+# Bump: set package.version.
+
+package:
+  name: pi-coding-agent
+  version: 1.3.0
+  epoch: 0
+  description: Pi coding agent CLI
+  copyright:
+    - license: MIT
+  dependencies:
+    runtime:
+      - nodejs-24
+
+environment:
+  contents:
+    repositories:
+      - https://packages.wolfi.dev/os
+    keyring:
+      - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+    packages:
+      - wolfi-base
+      - nodejs-24
+      - npm-12 # nodejs-24 drops its bundled npm
+
+pipeline:
+  - runs: |
+      npm install -g --ignore-scripts \
+        --prefix ${{targets.destdir}}/usr \
+        @earendil-works/pi-coding-agent@${{package.version}}

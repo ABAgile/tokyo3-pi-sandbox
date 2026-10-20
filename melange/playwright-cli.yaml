@@ -1,0 +1,76 @@
+# Playwright CLI (npm: @playwright/cli), pinned, with Chromium baked in.
+# Pinned replacement for `npm install -g @playwright/cli@latest`.
+# Installed under /usr so it is part of the image (not shadowed by the /home volume).
+#
+# Chromium is downloaded by Playwright at build time into /usr/share/playwright
+# (PLAYWRIGHT_BROWSERS_PATH in apko.yaml). Wolfi has no chromium package, so the
+# runtime dependencies below are the Wolfi equivalents of Playwright's Ubuntu
+# dependency list for chromium.
+# Bump: set package.version. The browser build follows the playwright-core version
+# that @playwright/cli pins.
+
+package:
+  name: playwright-cli
+  version: 0.1.22
+  epoch: 0
+  description: Playwright command-line client, with Chromium
+  copyright:
+    - license: Apache-2.0
+  dependencies:
+    runtime:
+      - nodejs-24
+      - alsa-lib
+      - at-spi2-core
+      - cairo
+      - cups
+      - dbus
+      - fontconfig
+      - freetype
+      - glib
+      - harfbuzz
+      - libatk-1.0
+      - libatk-bridge-2.0
+      - libdrm
+      - libnspr
+      - libx11
+      - libxcb
+      - libxcomposite
+      - libxdamage
+      - libxext
+      - libxfixes
+      - libxkbcommon
+      - libxrandr
+      - mesa-gbm
+      - nss
+      - pango
+      - wayland
+
+environment:
+  contents:
+    repositories:
+      - https://packages.wolfi.dev/os
+    keyring:
+      - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+    packages:
+      - wolfi-base
+      - nodejs-24
+      - npm-12 # nodejs-24 drops its bundled npm
+
+pipeline:
+  - runs: |
+      npm install -g \
+        --prefix ${{targets.destdir}}/usr \
+        @playwright/cli@${{package.version}}
+
+  - runs: |
+      export PLAYWRIGHT_BROWSERS_PATH=${{targets.destdir}}/usr/share/playwright
+      core=$(find ${{targets.destdir}}/usr/lib/node_modules -path '*/playwright-core/cli.js' | head -n 1)
+      [ -n "$core" ] || { echo "playwright-core cli.js not found"; exit 1; }
+      # --no-shell: the headless shell is never launched, because the image sets
+      # PLAYWRIGHT_MCP_BROWSER=chromium, which resolves to the full Chromium build.
+      node "$core" install --no-shell chromium
+      # The Chromium archive has files that are not world-readable. The guest runs as
+      # root, so they end up root-owned and unreadable for the build user (melange
+      # fails when packaging them), and for the agent user at runtime. Make the
+      # browser tree world-readable.
+      chmod -R a+rX "${{targets.destdir}}/usr/share/playwright"

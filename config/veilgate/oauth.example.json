@@ -1,0 +1,31 @@
+{
+  "brokers": [
+    {
+      "name": "openai",
+      "clients": [
+        "agent-dev"
+      ],
+      "issuer_host": "auth.openai.com",
+      "token_path": "/oauth/token",
+      "api_hosts": [
+        "chatgpt.com"
+      ],
+      "access_token_field": "access_token",
+      "refresh_token_field": "refresh_token"
+    },
+    {
+      "name": "anthropic",
+      "clients": [
+        "agent-dev"
+      ],
+      "issuer_host": "platform.claude.com",
+      "token_path": "/v1/oauth/token",
+      "api_hosts": [
+        "api.anthropic.com"
+      ],
+      "access_token_field": "access_token",
+      "refresh_token_field": "refresh_token",
+      "access_placeholder_prefix": "sk-ant-oat"
+    }
+  ]
+}

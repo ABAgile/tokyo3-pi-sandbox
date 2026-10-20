@@ -1,0 +1,92 @@
+name: Sandbox image
+
+# Builds the pi-sandbox image tarball with the Makefile, the same way as a local `make image`,
+# then pushes it to GHCR.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE_NAME: ghcr.io/abagile/tokyo3-pi-sandbox
+
+jobs:
+  build:
+    # The committed apko.aarch64.lock.json and the local packages are aarch64, so build on an arm64 runner.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v6
+
+      # melange.rsa is git-ignored. Store the private key as the MELANGE_SIGNING_KEY secret.
+      # The committed melange.rsa.pub must match it, or the image would trust a different key.
+      - name: Install melange signing key
+        env:
+          MELANGE_SIGNING_KEY: ${{ secrets.MELANGE_SIGNING_KEY }}
+        run: |
+          set -eu
+          test -n "$MELANGE_SIGNING_KEY" || { echo "MELANGE_SIGNING_KEY secret is not set" >&2; exit 1; }
+          umask 077
+          printf '%s\n' "$MELANGE_SIGNING_KEY" > melange.rsa
+          cmp <(openssl rsa -in melange.rsa -pubout 2>/dev/null) melange.rsa.pub \
+            || { echo "MELANGE_SIGNING_KEY does not match melange.rsa.pub" >&2; exit 1; }
+
+      # The Makefile mounts a named volume by default. On the runner, bind the checkout at /work instead.
+      # LOAD=0 writes the tarball only; the load step below loads it under IMAGE_NAME.
+      - name: Build packages and image
+        run: |
+          make image ARCH=aarch64 LOAD=0 \
+            WORK_MOUNT="--mount type=bind,src=$PWD,dst=/work"
+
+      - name: Verify checksums
+        run: sha256sum -c pi-sandbox.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pi-sandbox-aarch64
+          path: |
+            pi-sandbox.tar
+            pi-sandbox.versions.json
+            pi-sandbox.sha256
+            sbom-*.spdx.json
+          compression-level: 0
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Load image
+        run: make load IMAGE="$IMAGE_NAME"
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+
+      - name: Push to GHCR
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -eu
+          printf '%s\n' "$TAGS" | while read -r tag; do
+            [ -n "$tag" ] || continue
+            docker tag "$IMAGE_NAME" "$tag"
+            docker push "$tag"
+          done

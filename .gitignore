@@ -1,0 +1,36 @@
+# Go binaries and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binaries and coverage artifacts
+*.test
+*.out
+coverage.*
+*.coverprofile
+profile.cov
+
+# Go workspace files
+# vendor/
+go.work
+go.work.sum
+
+# Local configuration
+.env
+*.local.json
+
+# Build output and local Flux state
+/bin/
+node_modules/
+
+# image build: melange signing key, package repo, caches, image tarball, its version record, SBOMs
+# melange.rsa.pub is not ignored: it is the public key apko trusts, so it is committed.
+melange.rsa
+/packages/
+/.melange.cache/
+/pi-sandbox.tar
+/pi-sandbox.versions.json
+/pi-sandbox.sha256
+/sbom-*.spdx.json

@@ -1,0 +1,14 @@
+# Optional overlay: persists the pi config and the chezmoi source inside /home/agent.
+# The base compose.yml mounts SANDBOX_HOME at /home/agent; these nested mounts apply on top.
+#
+#   docker compose -f compose.yml -f compose.extra.yml up -d
+#
+# Both variables are required when this overlay is used. Each is a host path to bind-mount
+# (for example /Users/me/chezmoi/.pi). Compose fails if either is unset or empty. Bare
+# volume names are rejected, because this file declares no named volumes.
+
+services:
+  sandbox:
+    volumes:
+      - ${SANDBOX_PI:?SANDBOX_PI must be set to a host path for the pi config}:/home/agent/.pi
+      - ${SANDBOX_CHEZMOI:?SANDBOX_CHEZMOI must be set to a host path for the chezmoi source}:/home/agent/.local/share/chezmoi

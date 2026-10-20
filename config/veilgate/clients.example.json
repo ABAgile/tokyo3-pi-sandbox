@@ -1,0 +1,36 @@
+{
+  "clients": [
+    {
+      "name": "agent-dev",
+      "token": "@PROXY_TOKEN@",
+      "allowed_hosts": [
+        "api.anthropic.com",
+        "platform.claude.com",
+        "auth.openai.com",
+        "chatgpt.com",
+        "github.com",
+        "api.github.com",
+        "codeload.github.com",
+        "raw.githubusercontent.com",
+        "release-assets.githubusercontent.com",
+        "storage.googleapis.com",
+        "registry.npmjs.org",
+        "go.dev",
+        "proxy.golang.org",
+        "sum.golang.org",
+        "vuln.go.dev",
+        "pypi.org",
+        "files.pythonhosted.org",
+        "pi.dev",
+        "herdr.dev",
+        "packages.wolfi.dev"
+      ],
+      "intercept_mode": "inspect",
+      "intercept_hosts": [],
+      "opaque_hosts": [],
+      "allowed_ports": [
+        443
+      ]
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+# Sandbox image symlinks (vi -> nvim). Symlinks live here rather than in apko
+# `paths`, which chmods the symlink target.
+
+package:
+  name: sandbox-config
+  version: 1.2.0
+  epoch: 0
+  description: pi-sandbox vi alias
+  copyright:
+    - license: Apache-2.0
+  dependencies:
+    runtime:
+      - neovim
+
+environment:
+  contents:
+    repositories:
+      - https://packages.wolfi.dev/os
+    keyring:
+      - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+    packages:
+      - wolfi-base
+
+pipeline:
+  - runs: |
+      mkdir -p ${{targets.destdir}}/usr/bin
+      ln -s /usr/bin/nvim ${{targets.destdir}}/usr/bin/vi

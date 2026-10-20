@@ -1,0 +1,172 @@
+# pi-sandbox image on Wolfi (glibc).
+#
+# Local melange packages (herdr, pi-coding-agent, playwright-cli, sandbox-config)
+# come from ./melange/*.yaml. `make image` builds them and then this image (see
+# ./Makefile).
+#
+# Packages are pinned as name=version (versions as resolved from the Wolfi index
+# and the local packages on aarch64). Transitive dependencies are pinned in
+# apko.<arch>.lock.json, which `make refresh` regenerates.
+
+contents:
+  # Local melange packages: used at build time only, not written into the image.
+  build_repositories:
+    - ./packages
+  repositories:
+    - https://packages.wolfi.dev/os
+  keyring:
+    - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+    # Verifies the local melange packages (made by `make keygen` / `make packages`).
+    - ./melange.rsa.pub
+  packages:
+    # base system and shell tools
+    - wolfi-base=1-r7
+    - bash=5.3-r14
+    - build-base=1-r10
+    - curl=8.23.0-r0
+    - fish=4.9.3-r2
+    - gawk=5.4.1-r4
+    - git=2.56.0-r0
+    - gzip=1.14-r10
+    - make=4.4.1-r15
+    - nodejs-24=24.22.0-r0
+    - npm-12=12.2.0-r2 # nodejs-24 drops its bundled npm
+    - openssl=4.0.3-r6
+    - procps=4.0.7-r1
+    - tini=0.19.0-r26
+    - tzdata=2026e-r0
+    - uv=0.13.1-r0
+    - wget=1.25.0-r20
+    - zip=3.0-r11
+    # sandbox tools. Chromium and its libraries come in as runtime
+    # dependencies of the playwright-cli package.
+    - ca-certificates=20260909-r2
+    - ca-certificates-bundle=20260909-r2
+    - fd=10.5.0-r3
+    - fontconfig=2.18.3-r2
+    - font-freefont=20120503-r6
+    - freetype=2.14.3-r7
+    - fzf=0.74.5-r0
+    - harfbuzz=14.6.0-r0
+    - htop=3.5.3-r2
+    - netcat-openbsd=1.238-r1
+    - neovim=0.12.6-r0
+    - nss=3.131-r0
+    - poppler-utils=26.10.0-r0
+    - postgresql-18-client=18.6-r5
+    - ripgrep=15.2.0-r5
+    - tree=2.3.2-r4
+    # dotfile management; the config source is bind-mounted at runtime
+    - chezmoi=2.73.1-r0
+    # toolchains (replace COPY --from=golang / rust images; no rustup)
+    - go-1.27=1.27.2-r0
+    - rust-1.99=1.99.0-r1
+    # python (replaces `uv python install 3.14`)
+    - python-3.14=3.14.8_git20261014-r0
+    # melange-built (./melange)
+    - herdr=0.9.5-r0
+    - pi-coding-agent=1.3.0-r0
+    - playwright-cli=0.1.22-r0
+    - sandbox-config=1.2.0-r0
+
+archs:
+  - x86_64
+  - aarch64
+
+accounts:
+  run-as: agent
+  groups:
+    - groupname: agent
+      gid: 1000
+  users:
+    - username: agent
+      uid: 1000
+      gid: 1000
+      shell: /usr/bin/fish
+      homedir: /home/agent
+
+# Symlinks are not declared here: apko applies chmod to a symlink's target, so
+# a missing target fails the build and an existing one gets its mode changed.
+# They ship in melange/sandbox-config.yaml instead.
+paths:
+  # Parent must be traversable by agent; the leaf below is agent-owned (XDG_RUNTIME_DIR).
+  - path: /run/user
+    type: directory
+    uid: 0
+    gid: 0
+    permissions: 0o755
+  - path: /run/user/1000
+    type: directory
+    uid: 1000
+    gid: 1000
+    permissions: 0o700
+  # Mount points for compose volumes. Docker copies the image content at a path into a
+  # new named volume, so these make the volume roots agent-owned. Parents are listed
+  # explicitly because apko gives created parents the leaf's mode.
+  - path: /home/agent/.pi
+    type: directory
+    uid: 1000
+    gid: 1000
+    permissions: 0o755
+  - path: /home/agent/.local
+    type: directory
+    uid: 1000
+    gid: 1000
+    permissions: 0o755
+  - path: /home/agent/.local/share
+    type: directory
+    uid: 1000
+    gid: 1000
+    permissions: 0o755
+  - path: /home/agent/.local/share/chezmoi
+    type: directory
+    uid: 1000
+    gid: 1000
+    permissions: 0o755
+
+environment:
+  LANG: C.UTF-8
+  TZ: Asia/Taipei
+  TOKYO3: /tokyo3
+  HOME: /home/agent
+  UID: '1000'
+  GID: '1000'
+  SHELL: /usr/bin/fish
+  EDITOR: nvim
+  VISUAL: nvim
+  XDG_RUNTIME_DIR: /run/user/1000
+  XDG_CONFIG_HOME: /home/agent/.config
+  XDG_DATA_HOME: /home/agent/.local/share
+  XDG_CACHE_HOME: /home/agent/.cache
+  XDG_STATE_HOME: /home/agent/.local/state
+  TOOLS_BIN_HOME: /home/agent/.local/bin
+  NPM_CONFIG_PREFIX: /home/agent/.local/share/npm
+  UV_TOOL_DIR: /home/agent/.local/share/uv/tools
+  UV_TOOL_BIN_DIR: /home/agent/.local/bin
+  UV_PYTHON_INSTALL_DIR: /home/agent/.local/share/uv/python
+  UV_SYSTEM_CERTS: 'true'
+  NODE_USE_SYSTEM_CA: '1'
+  SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
+  PLAYWRIGHT_BROWSERS_PATH: /usr/share/playwright
+  # playwright-cli defaults to the system Google Chrome; use the bundled Chromium.
+  PLAYWRIGHT_MCP_BROWSER: chromium
+  # pi is pinned in melange/pi-coding-agent.yaml; disable the startup update check.
+  PI_SKIP_VERSION_CHECK: '1'
+  # Use only the image's Go toolchain; never download another one into GOPATH.
+  GOTOOLCHAIN: local
+  GOPATH: /home/agent/.local/share/go
+  CARGO_HOME: /home/agent/.local/share/cargo
+  CARGO_INSTALL_ROOT: /home/agent/.local/bin
+  PATH: /home/agent/.local/share/npm/bin:/home/agent/.local/share/go/bin:/home/agent/.local/share/cargo/bin:/home/agent/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+entrypoint:
+  command: /usr/bin/tini --
+
+# Headless herdr server, PID 1 under tini. Attach with `docker compose exec sandbox /usr/bin/herdr`.
+# The absolute path avoids a stale ~/.local/bin/herdr in the home volume shadowing the package.
+cmd: /usr/bin/herdr server
+
+work-dir: /home/agent
+
+volumes:
+  - /home/agent

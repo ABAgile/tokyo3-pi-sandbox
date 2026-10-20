@@ -1,0 +1,124 @@
+name: tokyo3_sandbox
+
+x-global-env: &global-env
+  TZ: Asia/Taipei
+x-global-settings: &global-settings
+  logging:
+    driver: local
+
+volumes:
+  tokyo3_hq_proj:
+    external: true
+  tokyo3_sandbox_home:
+    external: true
+  # Trust bundle volume, written by `make trust`. SANDBOX_TRUST in .env names it.
+  trust:
+    name: ${SANDBOX_TRUST:-tokyo3_sandbox_trust}
+    external: true
+  # veilgated's certificates, policy, and state (auth.json, flows.db). External, so that
+  # `docker compose down -v` cannot remove it. Created by `make volumes`. SANDBOX_VEILGATE in .env names it.
+  veilgate:
+    name: ${SANDBOX_VEILGATE:-tokyo3_sandbox_veilgate}
+    external: true
+
+networks:
+  default:
+    internal: true
+  egress: {}
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      <<: *global-env
+      POSTGRES_USER: agent
+      POSTGRES_PASSWORD: agent
+    tmpfs:
+      - /var/lib/postgresql/data
+    <<: *global-settings
+
+  nats:
+    image: nats:2.11-alpine
+    environment:
+      <<: *global-env
+    command: >
+      -m 8222
+      -n nats
+      -js
+      -sd /var/lib/nats
+    ports:
+      - 4222:4222
+      - 8222:8222
+    tmpfs:
+      - /var/lib/nats
+    <<: *global-settings
+
+  sandbox:
+    image: ${SANDBOX_IMAGE:-abagile/tokyo3-pi-sandbox}
+    hostname: pi-sandbox
+    environment:
+      <<: *global-env
+      HTTPS_PROXY: ${SANDBOX_PROXY:-}
+      HTTP_PROXY: ${SANDBOX_PROXY:-}
+      ALL_PROXY: ${SANDBOX_PROXY:-}
+      PGHOST: postgres
+      PGUSER: agent
+      PGPASSWORD: agent
+    cap_drop:
+      - ALL
+    volumes:
+      - ${SANDBOX_PROJ:-tokyo3_hq_proj}:/tokyo3/proj
+      - ${SANDBOX_HOME:-tokyo3_sandbox_home}:/home/agent
+      # Trust bundle (base roots + intercept CA) written by `make trust`. External, so compose
+      # refuses to start until it exists.
+      - trust:/etc/ssl/certs:ro
+    working_dir: /tokyo3/proj/abagile
+    <<: *global-settings
+
+  # Veilgate proxy from the published image. Sandbox traffic reaches it at
+  # veilgated-proxy on the internal default network; it reaches the internet through
+  # egress, and the console is only on egress, so the sandbox cannot reach it.
+  # The veilgate volume is split by subpath: etc/ is mounted read-only at /etc/veilgate, lib/ at
+  # /var/lib/veilgate. Run `make volumes` before the first start: it creates the volumes and sets
+  # etc/ and lib/ to VEILGATED_UID:VEILGATED_GID. Then seed etc/ with `make certs` and `make policy`,
+  # and set VEILGATED_CONSOLE_USERNAME / VEILGATED_CONSOLE_PASSWORD in .env.
+  veilgated:
+    image: ${VEILGATED_IMAGE:-ghcr.io/abagile/tokyo3-veilgate:0.2.1}
+    command: ["serve"]
+    user: "${VEILGATED_UID:-65532}:${VEILGATED_GID:-65532}"
+    restart: unless-stopped
+    init: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    environment:
+      VEILGATED_ADDR: "veilgated-proxy:${VEILGATED_PROXY_PORT:-8080}"
+      VEILGATED_CONSOLE_ADDR: "veilgated-console:${VEILGATED_CONSOLE_PORT:-8081}"
+      VEILGATED_CONSOLE_USERNAME: "${VEILGATED_CONSOLE_USERNAME:-}"
+      VEILGATED_CONSOLE_PASSWORD: "${VEILGATED_CONSOLE_PASSWORD:-}"
+      VEILGATED_LOG_LEVEL: "${VEILGATED_LOG_LEVEL:-info}"
+    volumes:
+      - type: volume
+        source: veilgate
+        target: /etc/veilgate
+        read_only: true
+        volume:
+          subpath: etc
+      - type: volume
+        source: veilgate
+        target: /var/lib/veilgate
+        volume:
+          subpath: lib
+    ports:
+      - 127.0.0.1:${VEILGATED_CONSOLE_PORT:-8081}:${VEILGATED_CONSOLE_PORT:-8081}
+    networks:
+      default:
+        aliases:
+          - veilgated
+          - veilgated-proxy
+      egress:
+        aliases:
+          - veilgated
+          - veilgated-console

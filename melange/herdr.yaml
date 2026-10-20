@@ -1,0 +1,41 @@
+# herdr release binary (https://herdr.dev), pinned.
+# Pinned replacement for `curl herdr.dev/install.sh | sh` (unpinned "latest").
+# Bump: set package.version and both expected-sha256 values from
+# https://herdr.dev/latest.json ("sha256" map: linux-x86_64 / linux-aarch64).
+
+package:
+  name: herdr
+  version: 0.9.5
+  epoch: 0
+  description: herdr terminal workspace for coding agents
+  copyright:
+    - license: Apache-2.0
+  dependencies:
+    runtime: []
+
+environment:
+  contents:
+    repositories:
+      - https://packages.wolfi.dev/os
+    keyring:
+      - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+    packages:
+      - wolfi-base
+
+pipeline:
+  - if: ${{build.arch}} == 'x86_64'
+    uses: fetch
+    with:
+      uri: https://github.com/herdrdev/herdr/releases/download/v${{package.version}}/herdr-linux-x86_64
+      expected-sha256: 14d9e8bc8b4a9e0118d77c32266f76d461f09b40342eb23752960bd89f59929d
+      extract: 'false'
+
+  - if: ${{build.arch}} == 'aarch64'
+    uses: fetch
+    with:
+      uri: https://github.com/herdrdev/herdr/releases/download/v${{package.version}}/herdr-linux-aarch64
+      expected-sha256: 17d7536f2da50859523680ef279dffcac8e4a235f4e46fe8da6c2ec44141897c
+      extract: 'false'
+
+  - runs: |
+      install -Dm755 herdr-linux-* ${{targets.destdir}}/usr/bin/herdr
