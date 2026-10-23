@@ -3,6 +3,7 @@ name: tokyo3_sandbox
 x-global-env: &global-env
   TZ: Asia/Taipei
 x-global-settings: &global-settings
+  restart: unless-stopped
   logging:
     driver: local
 
@@ -46,9 +47,6 @@ services:
       -n nats
       -js
       -sd /var/lib/nats
-    ports:
-      - 4222:4222
-      - 8222:8222
     tmpfs:
       - /var/lib/nats
     <<: *global-settings
@@ -86,7 +84,6 @@ services:
     image: ${VEILGATED_IMAGE:-ghcr.io/abagile/tokyo3-veilgate:0.2.1}
     command: ["serve"]
     user: "${VEILGATED_UID:-65532}:${VEILGATED_GID:-65532}"
-    restart: unless-stopped
     init: true
     read_only: true
     security_opt:
@@ -94,6 +91,7 @@ services:
     cap_drop:
       - ALL
     environment:
+      <<: *global-env
       VEILGATED_ADDR: "veilgated-proxy:${VEILGATED_PROXY_PORT:-8080}"
       VEILGATED_CONSOLE_ADDR: "veilgated-console:${VEILGATED_CONSOLE_PORT:-8081}"
       VEILGATED_CONSOLE_USERNAME: "${VEILGATED_CONSOLE_USERNAME:-}"
@@ -122,3 +120,4 @@ services:
         aliases:
           - veilgated
           - veilgated-console
+    <<: *global-settings

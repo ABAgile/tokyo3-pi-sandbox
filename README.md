@@ -338,7 +338,8 @@ docker compose exec sandbox curl -sS -o /dev/null -w '%{http_code}\n' https://ap
   receives only the public `intercept-ca.crt`, through the trust volume.
 - The sandbox runs with `cap_drop: ALL` on an internal network. Its only egress is the proxy.
 - The postgres credentials (`agent`/`agent`) and the NATS setup (no auth) are for local
-  development only. `nats` publishes ports 4222 and 8222 on all host interfaces.
+  development only. `nats` and `postgres` publish no ports to the host; the sandbox reaches them
+  at `nats:4222` and `postgres:5432` on the internal network.
 - The console is published on `127.0.0.1` only and needs the username and password from `.env`.
 - The flow store holds recorded traffic. `auth.json` holds real OAuth access and refresh tokens in
   plaintext while the broker is enabled, which the seeded `oauth.json` does by default. Protect the
