@@ -29,13 +29,13 @@ contents:
     - git=2.56.0-r0
     - gzip=1.14-r10
     - make=4.4.1-r15
-    - nodejs-24=24.22.0-r0
-    - npm-12=12.2.0-r2 # nodejs-24 drops its bundled npm
+    - nodejs-24=24.22.1-r2
+    - npm-12=12.2.1-r1 # nodejs-24 drops its bundled npm
     - openssl=4.0.3-r6
     - procps=4.0.7-r1
     - tini=0.19.0-r26
     - tzdata=2026e-r0
-    - uv=0.13.1-r0
+    - uv=0.13.5-r1
     - wget=1.25.0-r20
     - zip=3.0-r11
     # sandbox tools. Chromium and its libraries come in as runtime
@@ -59,10 +59,10 @@ contents:
     # dotfile management; the config source is bind-mounted at runtime
     - chezmoi=2.73.1-r0
     # toolchains (replace COPY --from=golang / rust images; no rustup)
-    - go-1.27=1.27.2-r0
-    - rust-1.99=1.99.0-r1
+    - go-1.27=1.27.3-r0
+    - rust-1.99=1.99.1-r0
     # python (replaces `uv python install 3.14`)
-    - python-3.14=3.14.8_git20261014-r0
+    - python-3.14=3.14.8_git20261021-r2
     # melange-built (./melange)
     - herdr=0.9.5-r0
     - pi-coding-agent=1.3.0-r0
