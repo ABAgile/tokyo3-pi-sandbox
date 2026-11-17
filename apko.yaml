@@ -65,7 +65,7 @@ contents:
     - python-3.14=3.14.8_git20261021-r2
     # melange-built (./melange)
     - herdr=0.9.5-r0
-    - pi-coding-agent=1.3.0-r0
+    - pi-coding-agent=1.5.2-r0
     - playwright-cli=0.1.22-r0
     - sandbox-config=1.2.0-r0
 
