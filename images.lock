@@ -1,3 +1,0 @@
-# Written by make refresh. Builds use these digests; refresh to move to newer releases.
-MELANGE_DIGEST=sha256:b17c529b3473825e4b682cc2fa0384bd347cda8c7f1f56e6d432e686a4440749
-APKO_DIGEST=sha256:20ac78c9ccfd679a31a5c4e7c93b5861504ca0768d2ad60cc7fadb5933f7db37

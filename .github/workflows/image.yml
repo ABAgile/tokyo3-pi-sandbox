@@ -38,12 +38,19 @@ jobs:
           cmp <(openssl rsa -in melange.rsa -pubout 2>/dev/null) melange.rsa.pub \
             || { echo "MELANGE_SIGNING_KEY does not match melange.rsa.pub" >&2; exit 1; }
 
-      # The Makefile mounts a named volume by default. On the runner, bind the checkout at /work instead.
+      # make tools installs the apko and melange versions pinned in the Makefile into ./bin.
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+          cache: false
+
+      - name: Install apko and melange
+        run: make tools
+
+      # melange's docker runner uses the runner's own daemon, so WORKSPACE and CACHE_DIR need no extra mounts.
       # LOAD=0 writes the tarball only; the load step below loads it under IMAGE_NAME.
       - name: Build packages and image
-        run: |
-          make image ARCH=aarch64 LOAD=0 \
-            WORK_MOUNT="--mount type=bind,src=$PWD,dst=/work"
+        run: make image ARCH=aarch64 LOAD=0
 
       - name: Verify checksums
         run: sha256sum -c pi-sandbox.sha256

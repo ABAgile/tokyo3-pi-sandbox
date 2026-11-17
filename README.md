@@ -25,9 +25,9 @@ melange.rsa{,.pub}       melange signing key pair (both git-ignored)
 config/veilgate/         sample veilgated client and OAuth policies, seeded into the veilgate volume
 compose.yml              the stack
 compose.extra.yml        optional overlay that bind-mounts pi and chezmoi config into the sandbox
-Makefile                 build, certificate, and trust targets
-images.lock              digests of the melange and apko images (make refresh)
-apko.<arch>.lock.json    apko lock of the Wolfi and local package versions (make refresh)
+Makefile                 build, certificate, and trust targets; pins the apko and melange versions
+bin/                     apko and melange (from make tools; git-ignored)
+apko.<arch>.lock.json    apko lock of the Wolfi and local package versions (make apko-lock; committed)
 packages/                melange output: signed .apk files and APKINDEX (generated)
 pi-sandbox.tar           the built image tarball (generated)
 sbom-*.spdx.json         software bills of materials from apko (generated)
@@ -35,9 +35,10 @@ sbom-*.spdx.json         software bills of materials from apko (generated)
 
 ## Build pipeline: melange and apko
 
-The image is assembled in two stages. Both tools run from their Chainguard images, so the host
-needs only Docker, `make`, and `openssl`. `make refresh` pulls `:latest`, records the digests in
-`images.lock`, and regenerates the apko lock file. Builds use the recorded digests.
+The image is assembled in two stages. apko and melange are local binaries in `./bin`, installed by
+`make tools` at the versions pinned in the Makefile (`APKO_VERSION`, `MELANGE_VERSION`). To upgrade a
+tool, bump its version and rerun `make tools`. `make apko-lock` rebuilds stale packages and regenerates
+the apko lock file from the current Wolfi index.
 
 **1. melange builds packages.** Each `melange/<name>.yaml` describes how to build one `.apk`
 package from source. `make packages` runs melange on every recipe and signs the results with
@@ -46,21 +47,25 @@ local, so the image is built from exactly these packages.
 
 Melange does not record which recipes it has built, so the Makefile writes a stamp per recipe
 and architecture set (`packages/.<name>.<arch>.stamp`). A recipe rebuilds when its YAML, the
-signing key, or `images.lock` changes, so a tool upgrade rebuilds every package.
+signing key, or the melange binary changes, so a tool upgrade rebuilds every package.
 
 **2. apko assembles the image.** `apko.yaml` lists:
 
 - **repositories:** the Wolfi OS repository and the local `./packages` repository. The keyring
   holds the Wolfi signing key and `./melange.rsa.pub`, so the local packages are verified.
 - **packages:** pinned as `name=version`. Transitive dependencies are pinned by `apko.<arch>.lock.json`,
-  which `make refresh` regenerates. After a recipe version change, run `make refresh` so the lock matches.
+  which `make apko-lock` regenerates. The lock is committed, so CI builds the same Wolfi versions. It
+  also pins the checksums of the local packages, and `apko build` refuses a package that does not
+  match. After a recipe or tool change rebuilds the packages, run `make apko-lock` and commit the
+  lock. CI rebuilds the packages from scratch, so its build passes only if melange reproduces them
+  byte for byte.
 - **accounts, paths, environment, entrypoint:** the `agent` user, the mount-point directories
   for compose volumes, the environment (including the CA-bundle variables in the trust section
   below), and `tini` as the entrypoint with `/usr/bin/herdr server` as the command (a headless server; clients attach with `docker compose exec sandbox /usr/bin/herdr`).
 
 `make image` writes the OCI tarball `pi-sandbox.tar`, with SBOMs next to it, and
-`pi-sandbox.versions.json` beside it. The record holds the melange and apko image digests, what each
-tool reports for `version --json`, and the hash of the apko lock file.
+`pi-sandbox.versions.json` beside it. The record holds what each tool reports for `version --json`
+and the hash of the apko lock file.
 `pi-sandbox.sha256` lists the tarball and its SBOMs in `sha256sum` format, so `sha256sum -c` checks them.
 It also loads the image into the
 local Docker daemon as `SANDBOX_IMAGE` (`LOAD=0` skips the load). `make image` depends on
@@ -68,10 +73,10 @@ local Docker daemon as `SANDBOX_IMAGE` (`LOAD=0` skips the load). `make image` d
 
 ### Signing key
 
-`make keygen` creates `melange.rsa` and `melange.rsa.pub` in the melange image if they are missing.
+`make keygen` creates `melange.rsa` and `melange.rsa.pub` with melange if they are missing.
 `make packages` creates the private key if it is absent, and `make image` derives the public key if
 that is absent. Both files are git-ignored. Copy the pair to a fresh checkout, or let make derive the
-public key from the private key. `make clean` keeps the key, and refreshing the tool images never
+public key from the private key. `make clean` keeps the key, and reinstalling the tools never
 regenerates it.
 
 ### Build targets
@@ -79,10 +84,12 @@ regenerates it.
 | Target | Purpose |
 |---|---|
 | `make` (`all`) | Proxy policy and trust bundle: runs `policy` and `trust` (`trust` runs `certs` first). Does not build packages or the image |
-| `make packages` | Build every `melange/*.yaml` into `./packages` with the melange image, signed with `melange.rsa` |
-| `make refresh` | Pull the latest melange and apko, record their digests in `images.lock`, rebuild the packages, and regenerate the apko lock file (`ARCH`) |
-| `make apko-lock` | Regenerate the apko lock file for `ARCH` (run by `refresh`); the file is left untouched when nothing changed |
-| `make image` | Build `pi-sandbox.tar` with the apko image, write `pi-sandbox.versions.json`, and load it into Docker (`LOAD=0` to skip) |
+| `make tools` | Install the pinned apko and melange into `./bin` (needs Go) |
+| `make packages` | Build every `melange/*.yaml` into `./packages` with melange's docker runner, signed with `melange.rsa` |
+| `make prepare` | Create and chown `WORKSPACE` and `CACHE_DIR` on the daemon host (run by `packages`) |
+| `make prune-melange` | Remove the `melange:*` build-environment image tags (run by `packages`) |
+| `make apko-lock` | Build stale packages, then regenerate the apko lock file for `ARCH`; the file is left untouched when nothing changed |
+| `make image` | Build `pi-sandbox.tar` with apko, write `pi-sandbox.versions.json`, and load it into Docker (`LOAD=0` to skip) |
 | `make load` | Load an existing `pi-sandbox.tar`; never rebuilds |
 | `make keygen` | Create the signing key if missing |
 | `make volumes` | Create the home, trust, and veilgate volumes if missing; set `etc/` and `lib/` ownership in the veilgate volume; `certs` and `policy` run it first |
@@ -92,34 +99,29 @@ regenerates it.
 | `make up` | Start the sandbox stack detached with `docker compose up -d --remove-orphans` (`RECREATE=1` to force recreate) |
 | `make down` | Stop and remove the stack, including orphan containers |
 | `make ps` | List all stack containers, including stopped ones |
-| `make clean` | Remove `pi-sandbox.tar`, its version record and checksum file, `packages/`, and SBOMs (keeps the key and lock files) |
+| `make clean` | Remove `pi-sandbox.tar`, its version record and checksum file, `packages/`, and SBOMs (keeps the key, the lock file, `./bin`, and the melange caches) |
 | `make help` | List the targets |
 
 Useful variables: `ARCH` (default `host`; a list such as `x86_64,aarch64` needs cross-build
-support), `IMAGE`, `OUT`, and `LOAD`. Container settings: `MELANGE_REPO` and `APKO_REPO` (image
-repositories), `SANDBOX_PROJ` (the project volume), and
-`WORK_SUBPATH` (this directory inside it, default `abagile/sandbox`; see below).
+support), `IMAGE`, `OUT`, and `LOAD`. Tool settings: `APKO_VERSION` and `MELANGE_VERSION` (for
+`make tools`), `APKO` and `MELANGE` (binary paths, default `bin/apko` and `bin/melange`), `RUNNER`
+(default `docker`), `WORKSPACE` and `CACHE_DIR` (default `/tmp/melange/workspace` and
+`/tmp/melange/cache`; see below), and `APK_CACHE` (default `.melange.cache/apk`).
 
-## Build prerequisites: Docker and the project volume
+## Build prerequisites: Docker and the melange directories
 
-The packaging and image steps run in containers, so the host needs Docker, `make`, and `openssl`.
+The build host needs Linux, Docker, `make`, `openssl`, and Go (only for `make tools`). apko and
+melange run as your user, so everything they write in this directory is yours.
 
-- **Project location.** The containers see this directory through a volume subpath. `WORK_SUBPATH`
-  (default `abagile/sandbox`) is this directory inside `SANDBOX_PROJ`, the project volume, and it is
-  mounted at `/work`. Run `make` from this directory: the host-side steps use the current directory.
-  No host path is needed, so this works from a dev container. `SANDBOX_PROJ` must be a volume name.
-- **Privileges.** melange runs with `--cap-add SYS_ADMIN` and `--security-opt seccomp=unconfined
-  --security-opt apparmor=unconfined` instead of `--privileged`. bubblewrap needs user namespaces, which
-  the default seccomp and AppArmor profiles block. Without `SYS_ADMIN` the build fails with permission
-  denied, and with it the result matches `--privileged`. `SYS_ADMIN` is a broad capability, but it is
-  narrower than `--privileged`, which also grants every capability and host devices. I haven't tested
-  whether the two `--security-opt` options are still needed with `SYS_ADMIN`.
-- **Ownership.** The containers write as root, so each step chowns what it writes back to you:
-  `packages/`, `.melange.cache/`, the signing key, the apko lock, and the image tarball. A
-  `.melange.cache/` left root-owned by an earlier run needs one `sudo chown -R` before it can be
-  cleaned.
-- **Caches.** `.melange.cache/` (fetched inputs and the apk cache) sits under `/work`, so it persists
-  in the volume between runs.
+- **Shared melange paths.** melange's docker runner bind-mounts `WORKSPACE` and `CACHE_DIR` into its
+  build container, so both must be the same absolute path on the Docker daemon host and where `make`
+  runs. From a dev container, mount the host's `/tmp/melange` at the same path
+  (`-v /tmp/melange:/tmp/melange`). The build user is uid/gid 1000; `make prepare` (run before each
+  package build) chowns both directories to it.
+- **Caches.** `CACHE_DIR` holds fetched inputs, such as the npm cache, on the daemon host.
+  `.melange.cache/apk` holds the apk cache that melange reads locally. Both persist between runs.
+- **Build images.** The docker runner leaves `melange:*` build-environment images behind;
+  `make packages` prunes them after each recipe.
 - **Reruns.** Each recipe has a stamp, and the image depends on the stamps, so a rebuild with nothing
   changed does nothing.
 

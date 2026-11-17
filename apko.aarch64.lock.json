@@ -567,22 +567,22 @@
       },
       {
         "name": "linux-headers",
-        "url": "https://packages.wolfi.dev/os/aarch64/linux-headers-7.3.4-r0.apk",
-        "version": "7.3.4-r0",
+        "url": "https://packages.wolfi.dev/os/aarch64/linux-headers-7.3.5-r0.apk",
+        "version": "7.3.5-r0",
         "architecture": "aarch64",
         "signature": {
           "range": "",
           "checksum": ""
         },
         "control": {
-          "range": "bytes=0-11714",
-          "checksum": "sha1-PPmDh3Cs6jdG9m83wPdepylq75U="
+          "range": "bytes=0-11702",
+          "checksum": "sha1-sz8mqbt/eADtcDN+yhWqqDSpJq0="
         },
         "data": {
-          "range": "bytes=11715-2103263",
-          "checksum": "sha256-B3XhHfIHRLarofOupcCXPp3ac7AGVd4aVP2hXeQiM7s="
+          "range": "bytes=11703-2103296",
+          "checksum": "sha256-XWAsWBVvxK6uxRdi/aJ7bkTxlQotImeLEUwftj6QKw8="
         },
-        "checksum": "Q1PPmDh3Cs6jdG9m83wPdepylq75U="
+        "checksum": "Q1sz8mqbt/eADtcDN+yhWqqDSpJq0="
       },
       {
         "name": "glibc-2.44-dev",
@@ -1844,18 +1844,18 @@
         "version": "0.9.5-r0",
         "architecture": "aarch64",
         "signature": {
-          "range": "bytes=0-682",
-          "checksum": "sha1-w5eATvh+oM5LDqLSASNtwTUd2Xo="
+          "range": "bytes=0-685",
+          "checksum": "sha1-VKyqo+7bUcs3++buUEcfYyIzVcA="
         },
         "control": {
-          "range": "bytes=683-2853",
-          "checksum": "sha1-4W6s/M5OHn1hQVW9OigPjWtFNtA="
+          "range": "bytes=686-2847",
+          "checksum": "sha1-hI9Z7vR5CwvZsXSJhw7WApDLaGU="
         },
         "data": {
-          "range": "bytes=2854-10904555",
-          "checksum": "sha256-ZJaohUqK28ZWjtGoZPBcPL7HUzWKPrq6eyzDH0KiuOI="
+          "range": "bytes=2848-10904554",
+          "checksum": "sha256-2z1Ewx7Ad9hDRyw0rfGynAazM0y0zjGL9P0abSvq4Pk="
         },
-        "checksum": "Q14W6s/M5OHn1hQVW9OigPjWtFNtA="
+        "checksum": "Q1hI9Z7vR5CwvZsXSJhw7WApDLaGU="
       },
       {
         "name": "linux-pam",
@@ -2281,18 +2281,18 @@
         "version": "1.5.2-r0",
         "architecture": "aarch64",
         "signature": {
-          "range": "bytes=0-684",
-          "checksum": "sha1-yA2kUaVrQ1l2m3P2bscA+I2SOfU="
+          "range": "bytes=0-686",
+          "checksum": "sha1-YUWKSCiSmU+slDcwoGPBA95LpV4="
         },
         "control": {
-          "range": "bytes=685-1850",
-          "checksum": "sha1-S4+jm9u9acGTu1lrPxYaGXZG38U="
+          "range": "bytes=687-1849",
+          "checksum": "sha1-pWHWfT6qjmcI3uW4kKTS4DCkHyk="
         },
         "data": {
-          "range": "bytes=1851-27616530",
-          "checksum": "sha256-t5BISZ9GKeeDF4MTXYFQSyEE2YncGXBdjqQpkZonvuM="
+          "range": "bytes=1850-27616535",
+          "checksum": "sha256-ZbM2St1tiVNGC9a+vJyVu4hcCrPh64h5O97rqzEJEBk="
         },
-        "checksum": "Q1S4+jm9u9acGTu1lrPxYaGXZG38U="
+        "checksum": "Q1pWHWfT6qjmcI3uW4kKTS4DCkHyk="
       },
       {
         "name": "libx11-xcb1",
@@ -3231,18 +3231,18 @@
         "version": "0.1.22-r0",
         "architecture": "aarch64",
         "signature": {
-          "range": "bytes=0-687",
-          "checksum": "sha1-8obVRQoRRfg8X9FuXyxDy0mb6Dg="
+          "range": "bytes=0-684",
+          "checksum": "sha1-J2YBf5BdgpIiHalKQAnKSZe5Pj4="
         },
         "control": {
-          "range": "bytes=688-2525",
-          "checksum": "sha1-3IzUOiKTXDKUSx8iF7MSl5GHGms="
+          "range": "bytes=685-2515",
+          "checksum": "sha1-FT0ESIzucvm1/rGVdntIHeO/jEc="
         },
         "data": {
-          "range": "bytes=2526-201118889",
-          "checksum": "sha256-RNHDQDmOJVtVP9/naplvD4kNFh16L8rsUZss7ZKgF9U="
+          "range": "bytes=2516-201118882",
+          "checksum": "sha256-OUWCjrvFRlN/FvN4ihyXaj98IaxB6BH8slndy5rs9Sg="
         },
-        "checksum": "Q13IzUOiKTXDKUSx8iF7MSl5GHGms="
+        "checksum": "Q1FT0ESIzucvm1/rGVdntIHeO/jEc="
       },
       {
         "name": "openjpeg",
@@ -3650,17 +3650,17 @@
         "architecture": "aarch64",
         "signature": {
           "range": "bytes=0-687",
-          "checksum": "sha1-jWllDpq7O07bye355unBjMccaps="
+          "checksum": "sha1-m2NMfzzijpJAjt4WUORlMmffoYM="
         },
         "control": {
-          "range": "bytes=688-1726",
-          "checksum": "sha1-dXvnnXTEd+W/s/FjDynP4R+Jb7s="
+          "range": "bytes=688-1713",
+          "checksum": "sha1-argdgeZh4VtGjCSdFLqWIk54XAA="
         },
         "data": {
-          "range": "bytes=1727-2927",
-          "checksum": "sha256-7XjcmR/P5JX6ckSX0b4YBUpi3uRMQAlp8Nn81jxV8xc="
+          "range": "bytes=1714-2916",
+          "checksum": "sha256-VzLvNeGe/fUemfoJAX6bjwccSJW+hcM/+bWUkiOOp6w="
         },
-        "checksum": "Q1dXvnnXTEd+W/s/FjDynP4R+Jb7s="
+        "checksum": "Q1argdgeZh4VtGjCSdFLqWIk54XAA="
       },
       {
         "name": "tini",

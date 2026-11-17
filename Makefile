@@ -1,12 +1,15 @@
 ## pi-sandbox — build the sandbox image: melange packages (./melange) → apko image (./apko.yaml)
 ##
+## apko and melange are local binaries in ./bin (make tools). melange uses the docker runner, so WORKSPACE and
+## CACHE_DIR must be the same absolute path on the docker daemon host and where make runs (for example
+## `-v /tmp/melange:/tmp/melange`); make prepare chowns them.
+##
 ## Usage: make <target>
 ##
 
 # ── Variables ─────────────────────────────────────────────────────────────────
 
 dotenv  = $(shell sed -n 's/^$(1)=//p' .env 2>/dev/null | tail -n 1)
-lockval = $(shell sed -n 's/^$(1)=//p' images.lock 2>/dev/null | tail -n 1)
 
 # Sandbox image name. Compose runs SANDBOX_IMAGE from .env, so that is the fallback.
 IMAGE := $(or $(IMAGE),$(call dotenv,SANDBOX_IMAGE),abagile/tokyo3-pi-sandbox)
@@ -24,36 +27,25 @@ ARCH  ?= host
 ARCH_NAME := $(if $(filter host,$(ARCH)),$(shell uname -m | sed -e 's/arm64/aarch64/'),$(ARCH))
 ARCH_TAG  := $(shell printf '%s' '$(ARCH_NAME)' | tr ',' '_')
 
-# ── Tool images ───────────────────────────────────────────────────────────────
+# ── Tools ─────────────────────────────────────────────────────────────────────
 
-# melange and apko run from their Chainguard images. `make refresh` pulls :latest, records the
-# digests in images.lock, and regenerates the apko lock file. Builds use the recorded digests,
-# so they are reproducible until the next refresh. Package stamps and the image depend on
-# images.lock, so a tool change rebuilds them.
-MELANGE_REPO         ?= cgr.dev/chainguard/melange
-APKO_REPO            ?= cgr.dev/chainguard/apko
-MELANGE_DIGEST       := $(call lockval,MELANGE_DIGEST)
-APKO_DIGEST          := $(call lockval,APKO_DIGEST)
-MELANGE_IMAGE        ?= $(if $(MELANGE_DIGEST),$(MELANGE_REPO)@$(MELANGE_DIGEST),$(error images.lock is missing or incomplete: run make refresh))
-APKO_IMAGE           ?= $(if $(APKO_DIGEST),$(APKO_REPO)@$(APKO_DIGEST),$(error images.lock is missing or incomplete: run make refresh))
-# The containers see the project through a volume subpath, so no host path is needed. WORK_SUBPATH is
-# this directory inside the project volume (SANDBOX_PROJ), and it is mounted at /work. Run make from
-# that directory: the host-side steps use the current directory.
-SANDBOX_PROJ := $(or $(SANDBOX_PROJ),$(call dotenv,SANDBOX_PROJ),tokyo3_hq_proj)
-WORK_SUBPATH ?= $(or $(call dotenv,SANDBOX_SUBPATH),abagile/sandbox)
-WORK_MOUNT   ?= --mount type=volume,src=$(SANDBOX_PROJ),dst=/work,volume-subpath=$(WORK_SUBPATH)
+# apko and melange are pinned here and installed into ./bin by `make tools`. Package stamps, the apko
+# lock, and the image depend on the binaries, so reinstalling a tool rebuilds them.
+APKO_VERSION    ?= v1.4.13
+MELANGE_VERSION ?= v0.63.2
+BIN     := $(CURDIR)/bin
+APKO    ?= $(BIN)/apko
+MELANGE ?= $(BIN)/melange
 
-# The tools run with /work as the working directory, so recipes, melange.rsa, packages/,
-# .melange.cache/, and the outputs are all relative to it. Containers write as root, so their
-# outputs are chowned back to the invoking user with chown_back.
-# Instead of --privileged: bubblewrap needs user namespaces, which the default seccomp and AppArmor
-# profiles block, and CAP_SYS_ADMIN (tested: without it, the build fails with permission denied).
-MELANGE_RUN = docker run --rm --cap-add SYS_ADMIN --security-opt seccomp=unconfined --security-opt apparmor=unconfined -w /work $(WORK_MOUNT) $(MELANGE_IMAGE)
-APKO_RUN    = docker run --rm -w /work $(WORK_MOUNT) $(APKO_IMAGE)
-# $(1) is the chown flags, $(2) the paths relative to /work.
-define chown_back
-docker run --rm -w /work $(WORK_MOUNT) $(HELPER_IMAGE) chown $(1) $$(id -u):$$(id -g) $(2)
-endef
+# melange's docker runner bind-mounts WORKSPACE and CACHE_DIR into its build container, so both must
+# be the same absolute path on the daemon host and here. The build user is uid/gid 1000; prepare chowns
+# them to it. The apk cache is read by melange itself, so it stays local.
+RUNNER       ?= docker
+WORKSPACE    ?= /tmp/melange/workspace
+CACHE_DIR    ?= /tmp/melange/cache
+APK_CACHE    ?= .melange.cache/apk
+BUILD_UID    ?= 1000
+BUILD_GID    ?= 1000
 
 APKO_LOCK   := apko.$(ARCH_TAG).lock.json
 MELANGE_SRC := $(wildcard melange/*.yaml)
@@ -61,46 +53,41 @@ PKG_STAMPS  := $(patsubst melange/%.yaml,packages/.%.$(ARCH_TAG).stamp,$(MELANGE
 
 # ── Phony targets ─────────────────────────────────────────────────────────────
 
-.PHONY: all image load packages keygen refresh apko-lock volumes certs policy trust up down ps clean help
+.PHONY: all tools image load packages prepare prune-melange keygen apko-lock volumes certs policy trust up down ps clean help
 
 # Certificates and policy are seeded before the image and trust bundle are built.
 all: policy trust
 
-# ── Lock and refresh ──────────────────────────────────────────────────────────
+## tools: Install apko and melange at the pinned versions into ./bin (needs Go)
+tools:
+	GOBIN=$(BIN) go install chainguard.dev/apko@$(APKO_VERSION)
+	GOBIN=$(BIN) go install chainguard.dev/melange@$(MELANGE_VERSION)
 
-## refresh: Pull the latest melange and apko, record their digests in images.lock, and regenerate the apko lock file (ARCH)
-refresh:
-	@set -eu; \
-	for repo in $(MELANGE_REPO) $(APKO_REPO); do docker pull "$$repo:latest" >/dev/null; done; \
-	m=$$(docker image inspect --format '{{index .RepoDigests 0}}' "$(MELANGE_REPO):latest" | sed 's/^.*@//'); \
-	a=$$(docker image inspect --format '{{index .RepoDigests 0}}' "$(APKO_REPO):latest" | sed 's/^.*@//'); \
-	new=$$(printf '# Written by make refresh. Builds use these digests; refresh to move to newer releases.\nMELANGE_DIGEST=%s\nAPKO_DIGEST=%s\n' "$$m" "$$a"); \
-	if [ "$$new" = "$$(cat images.lock 2>/dev/null)" ]; then echo "  images.lock unchanged"; else printf '%s\n' "$$new" > images.lock; echo "  images.lock updated: melange $$m, apko $$a"; fi
-	$(MAKE) --no-print-directory packages
-	$(MAKE) --no-print-directory apko-lock
+$(BIN)/apko $(BIN)/melange:
+	@echo "$@ is missing: run 'make tools' first" >&2; exit 1
 
-## apko-lock: Regenerate the apko lock file for ARCH from the Wolfi index and ./packages; keeps the file if unchanged (run by refresh)
-apko-lock:
-	$(APKO_RUN) lock --arch $(ARCH_NAME) --output $(APKO_LOCK).new apko.yaml
-	$(call chown_back,,$(APKO_LOCK).new)
+# ── Lock ──────────────────────────────────────────────────────────────────────
+
+# The lock is committed: it pins the Wolfi packages and the checksums of the local packages, so the image
+# builds only against packages identical to the ones it was generated from. Regenerate it after a recipe
+# or tool change rebuilds the packages.
+## apko-lock: Build stale packages, then regenerate the apko lock file for ARCH from the Wolfi index and ./packages; keeps the file if unchanged
+apko-lock: $(APKO) melange.rsa.pub $(PKG_STAMPS)
+	$(APKO) lock --arch $(ARCH_NAME) --output $(APKO_LOCK).new apko.yaml
 	@if cmp -s $(APKO_LOCK).new $(APKO_LOCK); then rm -f $(APKO_LOCK).new; echo "  $(APKO_LOCK) unchanged"; else mv $(APKO_LOCK).new $(APKO_LOCK); echo "  $(APKO_LOCK) updated"; fi
 
-# Written by make refresh. A missing file stops any build that needs it.
-images.lock:
-	@echo "images.lock is missing: run 'make refresh' first" >&2; exit 1
-
+# Written by make apko-lock. A missing file stops any build that needs it.
 $(APKO_LOCK):
-	@echo "$@ is missing: run 'make refresh' first (ARCH=$(ARCH_NAME))" >&2; exit 1
+	@echo "$@ is missing: run 'make apko-lock' first (ARCH=$(ARCH_NAME))" >&2; exit 1
 
 # ── Signing key ───────────────────────────────────────────────────────────────
 
-## keygen: Create the melange signing key (melange.rsa + melange.rsa.pub) if missing, with the melange image
+## keygen: Create the melange signing key (melange.rsa + melange.rsa.pub) if missing
 keygen: melange.rsa melange.rsa.pub
 
-# No prerequisites on purpose: refreshing the tool images must never regenerate an existing key.
-melange.rsa:
-	$(MELANGE_RUN) keygen melange.rsa
-	$(call chown_back,,melange.rsa melange.rsa.pub)
+# Order-only on melange: reinstalling the tools must never regenerate an existing key.
+melange.rsa: | $(MELANGE)
+	$(MELANGE) keygen melange.rsa
 
 # keygen writes both halves. If only the private key is present (for example a fresh
 # checkout that copied it over), derive the public key from it.
@@ -109,39 +96,51 @@ melange.rsa.pub: melange.rsa
 
 # ── Packages ──────────────────────────────────────────────────────────────────
 
-## packages: Build every melange/*.yaml into ./packages with the melange image, signed with melange.rsa
+## prepare: Create WORKSPACE and CACHE_DIR on the daemon host and chown them to the melange build user
+# The helper container runs on the same daemon host as melange's bind mounts, so it can chown them.
+# chmod -R go+rX restores read access to leftovers from a failed build, which melange cannot walk otherwise.
+prepare:
+	docker run --rm -v $(WORKSPACE):/workspace -v $(CACHE_DIR):/cache $(HELPER_IMAGE) sh -c \
+	  'chown -R $(BUILD_UID):$(BUILD_GID) /workspace /cache && chmod -R go+rX /workspace /cache'
+
+## packages: Build every melange/*.yaml into ./packages, signed with melange.rsa (each build prunes melange build-env tags)
 packages: $(PKG_STAMPS)
 
 # melange does not record which recipes it has built, so each recipe gets a stamp per
-# architecture set. A recipe rebuilds when its YAML, the signing key, or the tool images change.
+# architecture set. A recipe rebuilds when its YAML, the signing key, or the melange binary change.
 # --git-commit: melange otherwise records HEAD in the apk, so every commit (including the lock) would change the package.
-packages/.%.$(ARCH_TAG).stamp: melange/%.yaml melange.rsa images.lock
-	mkdir -p .melange.cache/apk
-	$(MELANGE_RUN) build melange/$*.yaml --signing-key melange.rsa --arch $(ARCH_NAME) --runner bubblewrap \
+packages/.%.$(ARCH_TAG).stamp: melange/%.yaml melange.rsa $(MELANGE)
+	$(MAKE) --no-print-directory prepare
+	mkdir -p packages $(APK_CACHE)
+	$(MELANGE) build melange/$*.yaml --signing-key melange.rsa --arch $(ARCH_NAME) --runner $(RUNNER) \
 	  --git-commit $$(git hash-object melange/$*.yaml) \
-	  --cache-dir .melange.cache --apk-cache-dir .melange.cache/apk --out-dir packages
-	$(call chown_back,-R,packages .melange.cache)
+	  --workspace-dir $(WORKSPACE) --cache-dir $(CACHE_DIR) --apk-cache-dir $(APK_CACHE) --out-dir packages
+	$(MAKE) --no-print-directory prune-melange
 	@touch $@
+
+## prune-melange: Remove the melange:* build-environment image tags that melange leaves behind (in-use images are kept)
+prune-melange:
+	-docker images --format '{{.Repository}}:{{.Tag}}' --filter 'reference=melange:*' | xargs -r docker rmi
 
 # ── Image ─────────────────────────────────────────────────────────────────────
 
-## image: Build the image tarball (OUT) with the apko image, write its version record, and load it into docker as IMAGE (LOAD=0 to skip)
+## image: Build the image tarball (OUT) with apko, write its version record, and load it into docker as IMAGE (LOAD=0 to skip)
 image: $(OUT) $(VERSIONS)
 
-$(OUT): apko.yaml melange.rsa.pub images.lock $(PKG_STAMPS) $(APKO_LOCK)
-	$(APKO_RUN) build apko.yaml $(IMAGE) $@ --arch $(ARCH_NAME) --lockfile $(APKO_LOCK)
-	$(call chown_back,,$@)
+$(OUT): apko.yaml melange.rsa.pub $(APKO) $(PKG_STAMPS) $(APKO_LOCK)
+	$(APKO) build apko.yaml $(IMAGE) $@ --arch $(ARCH_NAME) --lockfile $(APKO_LOCK) \
+	  || { echo "  apko build failed; if it reports a hash mismatch, the packages changed since $(APKO_LOCK) was written: run 'make apko-lock'" >&2; exit 1; }
 	@echo "  built $(OUT) as $(IMAGE)"
 	@if [ "$(LOAD)" = 1 ]; then $(MAKE) --no-print-directory load; fi
 
-# The record: the exact tool images, what each tool reports for its version, and the apko lock used.
+# The record: what each tool reports for its version, and the apko lock used.
 # The checksum file covers the tarball and its SBOMs, so `sha256sum -c` can verify them.
-$(VERSIONS): $(OUT) images.lock $(APKO_LOCK)
+$(VERSIONS): $(OUT) $(MELANGE) $(APKO) $(APKO_LOCK)
 	@set -eu; \
-	mel=$$($(MELANGE_RUN) version --json); \
-	apk=$$($(APKO_RUN) version --json); \
-	printf '{\n  "melange": {"image": "%s", "version": %s},\n  "apko": {"image": "%s", "version": %s},\n  "arch": "%s",\n  "apko_lock": "%s",\n  "apko_lock_sha256": "%s"\n}\n' \
-	  '$(MELANGE_IMAGE)' "$$mel" '$(APKO_IMAGE)' "$$apk" '$(ARCH_NAME)' '$(APKO_LOCK)' "$$(sha256sum $(APKO_LOCK) | cut -d' ' -f1)" > $@; \
+	mel=$$($(MELANGE) version --json); \
+	apk=$$($(APKO) version --json); \
+	printf '{\n  "melange": {"version": %s},\n  "apko": {"version": %s},\n  "arch": "%s",\n  "apko_lock": "%s",\n  "apko_lock_sha256": "%s"\n}\n' \
+	  "$$mel" "$$apk" '$(ARCH_NAME)' '$(APKO_LOCK)' "$$(sha256sum $(APKO_LOCK) | cut -d' ' -f1)" > $@; \
 	sha256sum $(OUT) sbom-*.spdx.json > $(basename $(OUT)).sha256
 	@echo "  wrote $(VERSIONS) and $(basename $(OUT)).sha256"
 
@@ -152,7 +151,7 @@ load:
 	test -n "$$ref" || { echo "docker load printed no image name"; exit 1; }; \
 	docker tag "$$ref" $(IMAGE) && echo "  loaded $$ref, tagged as $(IMAGE)"
 
-## clean: Remove the image tarball, its version record, SBOMs, and ./packages (keeps the signing key and lock files)
+## clean: Remove the image tarball, its version record, SBOMs, and ./packages (keeps the signing key, the lock file, ./bin, and the melange caches)
 clean:
 	rm -rf $(OUT) $(VERSIONS) $(basename $(OUT)).sha256 packages sbom-*.spdx.json
 
